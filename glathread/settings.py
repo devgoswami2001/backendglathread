@@ -40,7 +40,22 @@ INSTALLED_APPS = [
     'glamth',
     'rest_framework',
     'corsheaders',
+    'channels',
 ]
+
+
+ASGI_APPLICATION = 'core.asgi.application'
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  
@@ -77,7 +92,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # ✅ FOR DEVELOPMENT ONLY
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:5500",
-    "http://172.16.15.39:9002",
+    "http://172.16.0.2:9002",
 ]
 
 # Database

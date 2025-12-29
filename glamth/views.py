@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 
+
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from pywebpush import webpush, WebPushException
@@ -65,10 +66,11 @@ class UserViewSet(ModelViewSet):
 class DashboardCountAPIView(APIView):
     def get(self, request):
         today = timezone.now().date()
+        user = request.user
 
-        # ✅ =========================
+        # ===============================
         # ✅ BASIC STATUS COUNTS
-        # ✅ =========================
+        # ===============================
 
         total_requests = WorkThread.objects.count()
 
@@ -87,29 +89,35 @@ class DashboardCountAPIView(APIView):
 
         rejected = WorkThread.objects.filter(approval_status='rejected').count()
 
-        # ✅ =========================
+        # ===============================
         # ✅ LATEST DUE DATE SUBQUERY
-        # ✅ =========================
+        # ===============================
 
         latest_due_date = WorkProgressUpdate.objects.filter(
             thread=OuterRef('pk')
         ).order_by('-created_at').values('expected_end_date')[:1]
 
-        # ✅ =========================
-        # ✅ OVERDUE (LATEST DUE < TODAY)
-        # ✅ =========================
+        # ===============================
+        # ✅ OVERDUE THREADS
+        # ===============================
 
-        overdue = WorkThread.objects.annotate(
+        overdue_qs = WorkThread.objects.annotate(
             latest_due=Subquery(latest_due_date)
         ).filter(
             latest_due__lt=today
         ).exclude(
             status__in=['completed', 'payment_completed', 'workcompleted']
-        ).count()
+        )
 
-        # ✅ =========================
+        overdue_count = overdue_qs.count()
+
+        overdue_threads_data = TodayThreadListSerializer(
+            overdue_qs, many=True
+        ).data
+
+        # ===============================
         # ✅ TODAY'S PENDENCY (DUE TODAY)
-        # ✅ =========================
+        # ===============================
 
         todays_pendency_qs = WorkThread.objects.annotate(
             latest_due=Subquery(latest_due_date)
@@ -117,36 +125,44 @@ class DashboardCountAPIView(APIView):
             latest_due=today
         )
 
-        # ✅ =========================
-        # ✅ TODAY'S WORK (CREATED TODAY - ANY STATUS)
-        # ✅ =========================
-
-        todays_work_qs = WorkThread.objects.filter(
-            created_at__date=today
-        )
-
-        # ✅ =========================
-        # ✅ COUNTS
-        # ✅ =========================
-
         todays_pendency_count = todays_pendency_qs.count()
-        todays_work_count = todays_work_qs.count()
-
-        # ✅ =========================
-        # ✅ SERIALIZED THREAD DATA
-        # ✅ =========================
 
         todays_pendency_data = TodayThreadListSerializer(
             todays_pendency_qs, many=True
         ).data
 
+        # ===============================
+        # ✅ TODAY'S WORK (CREATED TODAY)
+        # ===============================
+
+        todays_work_qs = WorkThread.objects.filter(
+            created_at__date=today
+        )
+
+        todays_work_count = todays_work_qs.count()
+
         todays_work_data = TodayThreadListSerializer(
             todays_work_qs, many=True
         ).data
 
-        # ✅ =========================
+        # ===============================
+        # ✅ TODAY'S REMINDERS (FOR LOGGED IN USER)
+        # ===============================
+
+        todays_reminders_qs = ReminderThread.objects.filter(
+            created_by=user,
+            reminder_at__date=today
+        ).order_by("reminder_at")
+
+        todays_reminders_count = todays_reminders_qs.count()
+
+        todays_reminders_data = TodayReminderSerializer(
+            todays_reminders_qs, many=True
+        ).data
+
+        # ===============================
         # ✅ FINAL DASHBOARD RESPONSE
-        # ✅ =========================
+        # ===============================
 
         data = {
             "total_requests": total_requests,
@@ -156,7 +172,11 @@ class DashboardCountAPIView(APIView):
             "payment_pending": payment_pending,
             "payment_done": payment_done,
             "rejected": rejected,
-            "overdue": overdue,
+
+            "overdue": {
+                "count": overdue_count,
+                "threads": overdue_threads_data
+            },
 
             "todays_pendency": {
                 "count": todays_pendency_count,
@@ -166,11 +186,16 @@ class DashboardCountAPIView(APIView):
             "todays_work": {
                 "count": todays_work_count,
                 "threads": todays_work_data
+            },
+
+            # NEW SECTION
+            "todays_reminders": {
+                "count": todays_reminders_count,
+                "reminders": todays_reminders_data
             }
         }
 
-        return Response(data)   
-
+        return Response(data)
 
 
 
@@ -292,10 +317,11 @@ class WorkProgressUpdateViewSet(ModelViewSet):
         serializer.save(updated_by=self.request.user)
 
 
+from .utils import broadcast_thread_message
 
 class SendThreadMessageAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser,JSONParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
         serializer = ThreadMessageCreateSerializer(data=request.data)
@@ -303,32 +329,45 @@ class SendThreadMessageAPIView(APIView):
         if serializer.is_valid():
             message = serializer.save(sender=request.user)
 
+            data = {
+                "id": message.id,
+                "thread": message.thread.id,
+                "sender": message.sender.id,
+                "receiver": message.receiver.id if message.receiver else None,
+                "message_type": message.message_type,
+                "text_message": message.text_message,
+                "media_file": message.media_file.url if message.media_file else None,
+                "created_at": str(message.created_at),
+            }
+
+            # 🔥 REAL-TIME CHAT PUSH
+            broadcast_thread_message(message.thread.id, data)
+
+            # ============================
+            # EXISTING PUSH NOTIFICATION
+            # ============================
+            payload = {
+                "title": f"New message from {request.user.full_name}",
+                "body": message.text_message or "You have a new message.",
+                "url": f"http://localhost:9002/dashboard/requests/{message.thread.id}/",
+                "icon": "http://172.16.15.43:9002/logo.png",
+                "badge": "http://172.16.15.43:9002/logo.png"
+            }
+
+            from glamth.models import PushSubscription
+            from glamth.tasks import send_push_to_subscription
+
+            subs = PushSubscription.objects.all()
+            for sub in subs:
+                send_push_to_subscription.delay(sub.id, payload)
+
             return Response(
-                {
-                    "success": True,
-                    "message": "Message sent successfully",
-                    "data": {
-                        "id": message.id,
-                        "thread": message.thread.id,
-                        "sender": message.sender.id,
-                        "receiver": message.receiver.id if message.receiver else None,
-                        "message_type": message.message_type,
-                        "text_message": message.text_message,
-                        "media_file": message.media_file.url if message.media_file else None,
-                        "created_at": message.created_at
-                    }
-                },
+                {"success": True, "message": "Message sent successfully", "data": data},
                 status=status.HTTP_201_CREATED
             )
 
-        return Response(
-            {
-                "success": False,
-                "errors": serializer.errors
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
+        return Response({"success": False, "errors": serializer.errors}, status=400)
+
 
 
 class MeAPIView(APIView):
@@ -466,5 +505,12 @@ class DeleteSubscriptionAPIView(APIView):
 
 
 
+class ReminderThreadViewSet(ModelViewSet):
+    queryset = ReminderThread.objects.all().order_by('-reminder_at')
+    serializer_class = ReminderThreadSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ReminderThread.objects.all().order_by('-reminder_at')
 
 

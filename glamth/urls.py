@@ -8,6 +8,7 @@ router.register(r'request-categories', RequestCategoryViewSet, basename='request
 router.register(r'work-progress', WorkProgressUpdateViewSet, basename='work-progress')
 router.register(r'gate-passes', GatePassViewSet, basename='gate-pass')
 router.register(r'work-claims', WorkClaimViewSet, basename='work-claim')
+router.register(r'reminders', ReminderThreadViewSet, basename='reminders')
 
 urlpatterns = [
     path('', include(router.urls)),          # ✅ USERS API WORKS HERE
@@ -25,5 +26,6 @@ urlpatterns = [
     path("threads/<int:pk>/mark-completed/", MarkWorkThreadCompletedAPIView.as_view()),
     path("save-subscription/", SaveSubscriptionAPIView.as_view(), name="save_subscription"),
     path("delete-subscription/", DeleteSubscriptionAPIView.as_view(), name="delete_subscription"),
+    
 
 ]

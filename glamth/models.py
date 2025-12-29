@@ -94,6 +94,7 @@ class WorkThread(models.Model):
         ('payment_completed', 'Payment Completed'),
         ('completed', 'Completed'),
         ('delayed', 'Delayed'),
+        ('rejected', 'Rejected'),
     )
 
     APPROVAL_STATUS_CHOICES = (
@@ -490,3 +491,163 @@ class PushSubscription(models.Model):
         return f"PushSubscription({self.user}, {self.endpoint[:40]}...)"
 
 
+
+class ReminderThread(models.Model):
+
+    # 🔗 Link to WorkThread (ForeignKey)
+    work_thread = models.ForeignKey(
+        WorkThread,
+        on_delete=models.CASCADE,
+        related_name='reminders'
+    )
+
+    # 🕒 Reminder date + time
+    reminder_at = models.DateTimeField()
+
+    # 📝 Reminder message / notes
+    message = models.TextField(blank=True, null=True)
+
+    # 👤 Who created the reminder
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='created_reminders'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Reminder for {self.work_thread.thread_number} at {self.reminder_at}"
+
+
+
+
+
+
+
+
+class Approval(models.Model):
+    work_thread = models.ForeignKey(
+        WorkThread,
+        on_delete=models.CASCADE,
+        related_name='approvals'
+    )
+
+    approval_no = models.CharField(max_length=100, unique=True)
+    approval_type = models.CharField(max_length=100)
+    approval_date = models.DateField(null=True, blank=True)
+    created_date = models.DateField(null=True, blank=True)
+
+    purpose = models.CharField(max_length=255)
+    campus = models.CharField(max_length=255)
+    department = models.CharField(max_length=255)
+
+    vendor_name = models.CharField(max_length=255)
+    vendor_address = models.TextField()
+    vendor_contact = models.CharField(max_length=50)
+
+    related_person_name = models.CharField(max_length=255)
+    related_person_designation = models.CharField(max_length=255)
+    related_person_contact = models.CharField(max_length=50)
+
+    description = models.TextField(blank=True, null=True)
+
+    amount_in_words = models.CharField(max_length=255, blank=True, null=True)
+    comments = models.TextField(blank=True, null=True)
+
+    item_received_date = models.DateField(null=True, blank=True)
+    expected_delivery_date = models.DateField(null=True, blank=True)
+
+    status = models.CharField(max_length=50)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Approval {self.approval_no} | Thread {self.work_thread.thread_number}"
+
+
+# ============================================================
+#  APPROVAL FLOW (UNLIMITED APPROVERS)
+# ============================================================
+
+class ApprovalFlow(models.Model):
+    ROLE_CHOICES = (
+        ('initiator', 'Initiator'),
+        ('recommender', 'Recommender'),
+        ('cfo', 'CFO'),
+        ('chancellor', 'Chancellor'),
+        ('other', 'Other'),
+    )
+
+    approval = models.ForeignKey(
+        Approval,
+        on_delete=models.CASCADE,
+        related_name='approval_flow'
+    )
+
+    role = models.CharField(max_length=50, choices=ROLE_CHOICES)
+    name = models.CharField(max_length=255)
+    department = models.CharField(max_length=255, blank=True, null=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    level = models.IntegerField(default=1)
+
+    remarks = models.TextField(blank=True, null=True)  # optional improvement
+
+    def __str__(self):
+        return f"{self.role} - {self.name} (Level {self.level})"
+
+
+# ============================================================
+#  PAYMENT MASTER (SUMMARY)
+# ============================================================
+
+class PaymentMaster(models.Model):
+    approval = models.ForeignKey(
+        Approval,
+        on_delete=models.CASCADE,
+        related_name='payment_master'
+    )
+
+    total_issue_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_paid_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    balance_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    overall_status = models.CharField(max_length=50, default="pending")
+    remarks = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)  # recommended
+
+    def __str__(self):
+        return f"Payment Master for Approval {self.approval.approval_no}"
+
+
+# ============================================================
+#  PAYMENT DETAIL (MULTIPLE TRANSACTIONS)
+# ============================================================
+
+class PaymentDetail(models.Model):
+    payment_master = models.ForeignKey(
+        PaymentMaster,
+        on_delete=models.CASCADE,
+        related_name='payment_details'
+    )
+
+    sr_no = models.IntegerField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    tax = models.DecimalField(max_digits=12, decimal_places=2)
+    total = models.DecimalField(max_digits=12, decimal_places=2)
+
+    transaction_no = models.CharField(max_length=255)
+    transaction_date = models.DateField()
+    transaction_by = models.CharField(max_length=255)
+
+    signature = models.CharField(max_length=255, null=True, blank=True)
+    received_by = models.CharField(max_length=255)
+    bank_status = models.CharField(max_length=100)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Payment {self.transaction_no} - {self.total}"

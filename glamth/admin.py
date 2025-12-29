@@ -269,3 +269,18 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
     def endpoint_short(self, obj):
         return obj.endpoint[:50] + "..." if len(obj.endpoint) > 50 else obj.endpoint
     endpoint_short.short_description = "Endpoint"
+
+
+
+
+
+@admin.register(ReminderThread)
+class ReminderThreadAdmin(admin.ModelAdmin):
+    list_display = ('id', 'work_thread', 'reminder_at', 'created_by', 'created_at')
+    list_filter = ('reminder_at', 'created_by')
+    search_fields = ('work_thread__thread_number', 'message', 'created_by__username')
+    ordering = ('-reminder_at',)
+                
+
+
+

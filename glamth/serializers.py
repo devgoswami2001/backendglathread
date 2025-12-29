@@ -110,9 +110,32 @@ class TodayThreadListSerializer(serializers.ModelSerializer):
     def get_due_date(self, obj):
         last_update = obj.progress_updates.order_by('-created_at').first()
         return last_update.expected_end_date if last_update else None
-    
 
+class TodayReminderSerializer(serializers.ModelSerializer):
+    work_thread_number = serializers.CharField(source="work_thread.thread_number")
+    title = serializers.CharField(source="work_thread.title")
+    created_by_name = serializers.CharField(source="work_thread.created_by.full_name")
+    status = serializers.CharField(source="work_thread.status")
+    description = serializers.CharField(source="work_thread.description")
+    due_date = serializers.SerializerMethodField()
 
+    class Meta:
+        model = ReminderThread
+        fields = [
+            "id",
+            "work_thread_number",
+            "title",
+            "created_by_name",
+            "status",
+            "due_date",
+            "description",
+            "reminder_at",
+            "message",
+        ]
+
+    def get_due_date(self, obj):
+        last_update = obj.work_thread.progress_updates.order_by('-created_at').first()
+        return last_update.expected_end_date if last_update else None
 class ThreadMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(source='sender.full_name', read_only=True)
     receiver_name = serializers.CharField(source='receiver.full_name', read_only=True)
@@ -318,7 +341,7 @@ class WorkThreadApprovalSerializer(serializers.ModelSerializer):
         if instance.approval_status == 'approved':
             instance.status = 'working'
         elif instance.approval_status == 'rejected':
-            instance.status = 'completed'
+            instance.status = 'rejected'
 
         instance.save()
         return instance
@@ -629,5 +652,36 @@ class PushSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PushSubscription
         fields = ("id","endpoint","p256dh","auth")
+
+
+
+
+class ReminderThreadSerializer(serializers.ModelSerializer):
+    work_thread_number = serializers.CharField(
+        source='work_thread.thread_number',
+        read_only=True
+    )
+
+    class Meta:
+        model = ReminderThread
+        fields = [
+            'id',
+            'work_thread',
+            'work_thread_number',
+            'reminder_at',
+            'message',
+            'created_by',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ('created_by', 'created_at', 'updated_at')
+
+    # Auto-assign created_by from request.user
+    def create(self, validated_data):
+        validated_data['created_by'] = self.context['request'].user
+        return super().create(validated_data)
+    
+
+
 
 
