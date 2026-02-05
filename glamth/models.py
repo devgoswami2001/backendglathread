@@ -83,7 +83,6 @@ class RequestCategory(models.Model):
         return self.name
 
 
-
 class WorkThread(models.Model):
 
     STATUS_CHOICES = (
@@ -522,11 +521,6 @@ class ReminderThread(models.Model):
 
 
 
-
-
-
-
-
 class Approval(models.Model):
     work_thread = models.ForeignKey(
         WorkThread,
@@ -651,3 +645,5 @@ class PaymentDetail(models.Model):
 
     def __str__(self):
         return f"Payment {self.transaction_no} - {self.total}"
+    
+    

@@ -91,7 +91,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # ✅ FOR DEVELOPMENT ONLY
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://127.0.0.1:5500",
+    "http://172.16.15.50:9002",
     "http://172.16.0.2:9002",
 ]
 
@@ -155,14 +155,16 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=560),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=30),   # ✅ 30 DAYS
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=31),  # refresh thoda zyada rakho
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
-
 
 AUTHENTICATION_BACKENDS = [
     'glamth.backends.EmailBackend',              # ✅ Your custom email login

@@ -1,20 +1,50 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-class ChatConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        self.thread_id = self.scope["url_route"]["kwargs"]["thread_id"]
+# class ChatConsumer(AsyncWebsocketConsumer):
+#     async def connect(self):
+#         self.thread_id = self.scope["url_route"]["kwargs"]["thread_id"]
 
-        if not self.scope["user"].is_authenticated:
+#         if not self.scope["user"].is_authenticated:
+#             await self.close()
+#             return
+
+#         self.room = f"chat_{self.thread_id}"
+#         await self.channel_layer.group_add(self.room, self.channel_name)
+#         await self.accept()
+
+#     async def disconnect(self, close_code):
+#         await self.channel_layer.group_discard(self.room, self.channel_name)
+
+#     async def chat_message(self, event):
+#         await self.send(text_data=json.dumps(event["message"]))
+
+
+
+class ChatConsumer(AsyncWebsocketConsumer):
+
+    async def connect(self):
+        self.user = self.scope["user"]
+        if not self.user.is_authenticated:
             await self.close()
             return
 
-        self.room = f"chat_{self.thread_id}"
+        if "thread_id" in self.scope["url_route"]["kwargs"]:
+            self.room = f"chat_{self.scope['url_route']['kwargs']['thread_id']}"
+        else:
+            self.room = f"dashboard_{self.user.id}"
+
         await self.channel_layer.group_add(self.room, self.channel_name)
         await self.accept()
 
-    async def disconnect(self, close_code):
+    async def disconnect(self, code):
         await self.channel_layer.group_discard(self.room, self.channel_name)
 
     async def chat_message(self, event):
-        await self.send(text_data=json.dumps(event["message"]))
+        await self.send(text_data=json.dumps({"type": "chat", "data": event["message"]}))
+
+    async def dashboard_update(self, event):
+        await self.send(text_data=json.dumps({"type": "dashboard", "data": event["data"]}))
+
+
+

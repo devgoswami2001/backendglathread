@@ -3,9 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q, OuterRef, Subquery
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-import json
+
 from rest_framework import status, permissions
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -14,13 +12,16 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 
-
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from pywebpush import webpush, WebPushException
 
-from .models import WorkThread
+from glamth.realtime import notify_dashboard, notify_chat
+
+from .models import PushSubscription, WorkThread
 from .serializers import *
+from .utils import broadcast_thread_message
+
 
 
 User = get_user_model()
@@ -243,6 +244,9 @@ class WorkThreadCreateAPIView(APIView):
 
         if serializer.is_valid():
             thread = serializer.save()
+            user_ids = [thread.created_by.id]
+            user_ids += list(thread.assigned_to.values_list('id', flat=True))
+            notify_dashboard(user_ids)
             return Response(
                 {
                     "success": True,
@@ -286,7 +290,17 @@ class WorkThreadApprovalAPIView(APIView):
         )
 
         if serializer.is_valid():
-            serializer.save()
+            thread = serializer.save()
+
+            user_ids = [thread.created_by.id]
+            user_ids += list(thread.assigned_to.values_list('id', flat=True))
+            notify_dashboard(user_ids)
+
+            notify_chat(thread.id, {
+                "event": "thread_status_update",
+                "status": thread.approval_status,
+                "by": request.user.full_name
+            })
             return Response(
                 {
                     "success": True,
@@ -314,10 +328,14 @@ class WorkProgressUpdateViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save(updated_by=self.request.user)
+        obj = serializer.save(updated_by=self.request.user)
+        thread = obj.thread
+
+        user_ids = [thread.created_by.id]
+        user_ids += list(thread.assigned_to.values_list('id', flat=True))
+        notify_dashboard(user_ids)
 
 
-from .utils import broadcast_thread_message
 
 class SendThreadMessageAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -402,6 +420,11 @@ class GatePassViewSet(ModelViewSet):
             pass_mode='out',
             out_time=timezone.now()
         )
+        thread = gate_pass.thread
+        user_ids = [thread.created_by.id]
+        user_ids += list(thread.assigned_to.values_list('id', flat=True))
+        notify_dashboard(user_ids)
+        notify_chat(thread.id, {"event":"gatepass_out","by":request.user.full_name})
 
         return Response(
             {
@@ -426,6 +449,13 @@ class GatePassViewSet(ModelViewSet):
             )
 
         gate_pass.mark_in()
+        thread = gate_pass.thread
+        user_ids = [thread.created_by.id]
+        user_ids += list(thread.assigned_to.values_list('id', flat=True))
+        notify_dashboard(user_ids)
+
+        notify_chat(gate_pass.thread.id, {"event":"gatepass_in","by":request.user.full_name})
+        
 
         return Response(
             {"success": True, "message": "Marked as IN"},
@@ -438,6 +468,15 @@ class WorkClaimViewSet(ModelViewSet):
     serializer_class = WorkClaimSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    def perform_create(self, serializer):
+        obj = serializer.save(created_by=self.request.user)
+        thread = obj.thread
+
+        user_ids = [thread.created_by.id]
+        user_ids += list(thread.assigned_to.values_list('id', flat=True))
+        notify_dashboard(user_ids)
+
+        notify_chat(thread.id, {"event":"claim_added","by":self.request.user.full_name})
 
 
 
@@ -451,7 +490,14 @@ class MarkWorkThreadCompletedAPIView(APIView):
 
         serializer = WorkThreadCompleteSerializer(thread, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        thread = serializer.save()
+
+        user_ids = [thread.created_by.id]
+        user_ids += list(thread.assigned_to.values_list('id', flat=True))
+        notify_dashboard(user_ids)
+
+        notify_chat(thread.id, {"event":"thread_completed","by":request.user.full_name})
+
 
         return Response({
             "success": True,
@@ -465,12 +511,7 @@ class MarkWorkThreadCompletedAPIView(APIView):
 
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from django.utils import timezone
-from .serializers import PushSubscriptionSerializer
-from .models import PushSubscription
+
 
 class SaveSubscriptionAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]  # require login
@@ -510,7 +551,11 @@ class ReminderThreadViewSet(ModelViewSet):
     serializer_class = ReminderThreadSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        return ReminderThread.objects.all().order_by('-reminder_at')
+    def perform_create(self, serializer):
+        obj = serializer.save(created_by=self.request.user)
+        notify_dashboard([self.request.user.id])
+
+        if obj.thread:
+            notify_chat(obj.thread.id, {"event":"reminder_added","by":self.request.user.full_name})
 
 

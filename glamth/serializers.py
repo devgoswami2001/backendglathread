@@ -90,7 +90,6 @@ class DashboardCountSerializer(serializers.Serializer):
     todays_pendency = serializers.IntegerField()
     todays_work = serializers.IntegerField()
 
-
 class TodayThreadListSerializer(serializers.ModelSerializer):
     thread_number = serializers.IntegerField(source='id')
     created_by_name = serializers.CharField(source='created_by.full_name')
@@ -136,6 +135,7 @@ class TodayReminderSerializer(serializers.ModelSerializer):
     def get_due_date(self, obj):
         last_update = obj.work_thread.progress_updates.order_by('-created_at').first()
         return last_update.expected_end_date if last_update else None
+
 class ThreadMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.CharField(source='sender.full_name', read_only=True)
     receiver_name = serializers.CharField(source='receiver.full_name', read_only=True)
@@ -153,7 +153,6 @@ class ThreadMessageSerializer(serializers.ModelSerializer):
             'media_file',
             'created_at',
         ]
-
 
 class WorkProgressUpdateSerializer(serializers.ModelSerializer):
     updated_by_name = serializers.CharField(source='updated_by.full_name', read_only=True)
