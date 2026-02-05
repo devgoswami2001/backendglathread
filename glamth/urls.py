@@ -28,4 +28,5 @@ urlpatterns = [
     path("delete-subscription/", DeleteSubscriptionAPIView.as_view(), name="delete_subscription"),
     
 
+
 ]
